@@ -70,12 +70,15 @@ async def resolve_ticket(req: ResolveRequest):
         "_cached_tokens": 0,
     }
     result = await compiled_graph.ainvoke(initial_state)
-    output = result.get("draft", "")
+    # async for chunk in compiled_graph.astream(initial_state, stream_mode= "messages"):
+
+    # output = result.get("draft", "")
     latency = time.time() - start 
     return ResolveResponse(
-        decision= "Classified",
-        category= result.get("category"),
-        reply=f"input tokens:{result.get("_input_tokens")}, output tokens : {result.get("_output_tokens")}"
+        decision= "Researched",
+        category= str(result.get("tool_calls")),
+        reply=(f"input tokens:{result.get("_input_tokens")}, "
+            f"output tokens : {result.get("_output_tokens")}")
     )
 
 @app.get("/metrics/raw")
