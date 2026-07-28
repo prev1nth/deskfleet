@@ -7,7 +7,7 @@ load_dotenv()
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ from app.graph import compiled_graph
 from app.metrics import record_ticket, calculate_cost
 from app.storage import save_ticket, save_trace, get_tickets, get_ticket, get_ticket_traces, get_ticket_tool_calls, get_stats
 from app.tools import search_products, get_product, get_orders, search_products_with_orders
+from app.quota import is_over_quota, quota_exceeded_response
 
 
 from prometheus_client import generate_latest
@@ -78,6 +79,13 @@ async def resolve_ticket(req: ResolveRequest):
         )
 
     cleaned_ticket = scan["cleaned"]
+
+    # Check OpenAI spend cap
+    if is_over_quota():
+        quota = quota_exceeded_response()
+        latency = time.time() - start
+        record_ticket("QUOTA_EXCEEDED", latency)
+        return JSONResponse(status_code=429, content=quota)
 
     # Save initial ticket to get ID
     ticket_id = save_ticket(

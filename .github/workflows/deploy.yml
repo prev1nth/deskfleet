@@ -10,6 +10,7 @@ env:
   GCP_REGION: us-central1
   SERVICE_NAME: deskfleet
   IMAGE: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/deskfleet/deskfleet
+  SPEND_CAP_USD: 2.0
 
 jobs:
   build-and-deploy:

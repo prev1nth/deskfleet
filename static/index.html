@@ -254,6 +254,16 @@
                 });
                 const data = await res.json();
 
+                if (data.error === 'quota_exceeded') {
+                    responseBox.className = 'response-box show QUOTA_EXCEEDED';
+                    responseBox.innerHTML = `
+                        <h3>Quota Exceeded</h3>
+                        <p>${data.message}</p>
+                        <p class="text-muted">Current spend: $${data.current_spend_usd} / Cap: $${data.cap_usd}</p>
+                    `;
+                    return;
+                }
+
                 responseBox.className = `response-box show ${data.decision}`;
                 responseBox.innerHTML = `
                     <h3>${data.decision}</h3>
