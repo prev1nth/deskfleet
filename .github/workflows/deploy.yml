@@ -51,8 +51,8 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 5 \
-            --set-env-vars "DB_PATH=/tmp/deskfleet.db,LANGCHAIN_TRACING_V2=true,LANGCHAIN_ENDPOINT=https://api.smith.langchain.com" \
-            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY,LANGCHAIN_API_KEY=LANGCHAIN_API_KEY"
+            --set-env-vars "DB_PATH=/tmp/deskfleet.db,LANGSMITH_TRACING=true,LANGSMITH_ENDPOINT=https://apac.api.smith.langchain.com" \
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,LANGCHAIN_API_KEY=LANGCHAIN_API_KEY:latest"
 
       - name: Show deployment URL
         run: |
