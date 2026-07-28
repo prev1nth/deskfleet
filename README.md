@@ -6,6 +6,11 @@ AI-powered customer support agent that classifies, researches, and resolves supp
 
 A ticket comes in → prompt-injection guard → classifier → researcher (with tool calls to FakeStore API) → responder → reviewer loop. Each step is traced to SQLite for observability.
 
+## Guardrails & validations - for simplicity, implemented basic regex checks and redact keywords.
+
+- **Prompt injection** — rejects tickets containing: "ignore previous instructions", "you are now a/an", "system:", "override instructions", "forget prior", "disregard instructions", "new instructions:", "prompt injection", "act as if/a/an", "pretend you are", "jailbreak", "DAN mode"
+- **PII redaction** — emails, phone numbers, SSNs, and credit card numbers are redacted before the ticket hits the LLM and again on the output.
+
 ## Project structure
 
 ```
@@ -46,23 +51,23 @@ uvicorn app.main:app --reload --port 8000
 
 ## Environment variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `DB_PATH` | No | SQLite path (default: `deskfleet.db`) |
-| `LANGCHAIN_API_KEY` | No | LangSmith tracing key |
-| `LANGSMITH_TRACING` | No | Enable LangSmith traces (`true`/`false`) |
+| Variable            | Required | Description                              |
+| ------------------- | -------- | ---------------------------------------- |
+| `OPENAI_API_KEY`    | Yes      | OpenAI API key                           |
+| `DB_PATH`           | No       | SQLite path (default: `deskfleet.db`)    |
+| `LANGCHAIN_API_KEY` | No       | LangSmith tracing key                    |
+| `LANGSMITH_TRACING` | No       | Enable LangSmith traces (`true`/`false`) |
 
 ## Key endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/resolve` | Submit a ticket for resolution |
-| `GET` | `/health` | Health check |
-| `GET` | `/api/tickets` | List processed tickets |
-| `GET` | `/api/tickets/{id}` | Ticket detail + traces |
-| `GET` | `/metrics/prometheus` | Prometheus metrics |
-| `GET` | `/admin` | Admin dashboard |
+| Method | Path                  | Description                    |
+| ------ | --------------------- | ------------------------------ |
+| `POST` | `/resolve`            | Submit a ticket for resolution |
+| `GET`  | `/health`             | Health check                   |
+| `GET`  | `/api/tickets`        | List processed tickets         |
+| `GET`  | `/api/tickets/{id}`   | Ticket detail + traces         |
+| `GET`  | `/metrics/prometheus` | Prometheus metrics             |
+| `GET`  | `/admin`              | Admin dashboard                |
 
 ## Tests
 
