@@ -1,0 +1,60 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: us-central1
+  SERVICE_NAME: deskfleet
+  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/deskfleet
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t $IMAGE:${{ github.sha }} .
+          docker push $IMAGE:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image $IMAGE:${{ github.sha }} \
+            --region $GCP_REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8000 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 5 \
+            --set-env-vars "DB_PATH=/tmp/deskfleet.db,LANGCHAIN_TRACING_V2=true,LANGCHAIN_ENDPOINT=https://api.smith.langchain.com" \
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY,LANGCHAIN_API_KEY=LANGCHAIN_API_KEY"
+
+      - name: Show deployment URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $GCP_REGION --format="value(status.url)")
+          echo "Deployed to: $SERVICE_URL"
