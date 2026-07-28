@@ -28,3 +28,6 @@ def scan_input(text : str) -> dict:
 
 def scan_resolve_request(req: ResolveRequest) -> dict:
     return scan_input(req.ticket)
+
+def scan_output(text: str) -> str:
+    return redact_pii(text)

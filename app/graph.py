@@ -9,8 +9,22 @@ from app.state import TicketState
 from app.consts import MAX_ITERS
 from app.llm_consts import SYSTEM_MESSAGE_CLASSIFIER
 from app.tools import TOOL_REGISTRY, execute_tool, is_tool_allowed
+from app.metrics import record_tool_call
+from app.storage import save_trace
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+def _log_llm_call(ticket_id: int, step_name: str, messages: list, response, duration_ms: float):
+    if not ticket_id:
+        return
+    save_trace(
+        ticket_id=ticket_id,
+        step_type="llm_call",
+        step_name=step_name,
+        request={"messages": [m.content for m in messages]},
+        response={"content": response.content, "tool_calls": response.tool_calls},
+        metadata={"model": "gpt-4o-mini"},
+        duration_ms=duration_ms,
+    )
 
 def classifier_node(state: TicketState) -> dict:
     ticket_id = state.get("_ticket_id")
@@ -28,19 +42,19 @@ def classifier_node(state: TicketState) -> dict:
     start = time.time()
     response = llm.invoke(messages)
     duration_ms = (time.time() - start ) * 1000
-
+    _log_llm_call(ticket_id, "classifier", messages, response, duration_ms)
     category = response.content.strip().lower()
     if category not in ("order", "product", "refund", "other") :
         category = "other"
 
     usage = getattr(response, "usage_metadata", {}) or {}
-    # input_details = usage.get("input_token_details", {}) or {}
+    input_details = usage.get("input_token_details", {}) or {}
     return {
         "category": category,
         "duration": duration_ms,
         "_input_tokens": usage.get("input_tokens", 0),
         "_output_tokens": usage.get("output_tokens", 0),
-        "_cached_tokens": usage.get("cache_read", 0)
+        "_cached_tokens": input_details.get("cache_read", 0)
     }
 
 
@@ -93,7 +107,7 @@ Available tools: {', '.join(TOOL_REGISTRY.keys())}"""),
         start = time.time()
         response = llm.bind_tools(tool_schemas).invoke(messages)
         duration_ms = (time.time() - start) * 1000
-
+        _log_llm_call(ticket_id, "researcher", messages, response, duration_ms)
         usage = getattr(response, "usage_metadata", {}) or {}
 
         input_details = usage.get("input_token_details", {}) or {}
@@ -116,7 +130,7 @@ Available tools: {', '.join(TOOL_REGISTRY.keys())}"""),
                 messages.append(ToolMessage(content=json.dumps({"error": "Tool not allowed"}), tool_call_id=tc["id"]))
                 continue
 
-            
+            record_tool_call(tool_name)
             result = await execute_tool(tool_name, ticket_id=ticket_id, **tool_args)
             tool_calls_log.append({"tool": tool_name, "args": tool_args, "result": result})
             all_facts.append(json.dumps(result))
@@ -130,14 +144,143 @@ Available tools: {', '.join(TOOL_REGISTRY.keys())}"""),
         "_cached_tokens": total_cached_tokens,
     }
 
+def responder_node(state: TicketState) -> dict:
+    ticket_id = state.get("_ticket_id")
+    messages = [
+        SystemMessage(content="""You are a customer support responder. Draft a helpful, professional reply
+based ONLY on the facts provided. Do not make up information.
+If you don't have enough information, say so clearly."""),
+        HumanMessage(content=f"""Ticket: {state['ticket']}
+Category: {state['category']}
+Facts gathered: {state['facts']}
+
+Draft a customer-facing reply."""),
+    ]
+
+    start = time.time()
+    response = llm.invoke(messages)
+    duration_ms = (time.time() - start) * 1000
+
+    _log_llm_call(ticket_id, "responder", messages, response, duration_ms)
+
+    usage = getattr(response, "usage_metadata", {}) or {}
+    input_details = usage.get("input_token_details", {}) or {}
+
+    return {
+        "draft": response.content,
+        "_input_tokens": usage.get("input_tokens", 0),
+        "_output_tokens": usage.get("output_tokens", 0),
+        "_cached_tokens": input_details.get("cache_read", 0),
+    }
+
+
+def reviewer_node(state: TicketState) -> dict:
+    ticket_id = state.get("_ticket_id")
+    iters = state.get("iterations", 0) + 1
+
+    messages = [
+        SystemMessage(content="""You are a strict review agent. Evaluate the draft reply CRITICALLY:
+
+IMPORTANT RULES:
+- APPROVE (APPROVED) if:
+  * The reply fully resolves a customer issue with specific information
+  * The customer's message is positive feedback/thank you with no issue to resolve
+  * The customer is confirming something is working and needs no action
+- REJECT (NEEDS_FIX) if the reply:
+  * Asks for more information instead of resolving
+  * Is vague or non-committal
+  * Does not provide specific details from the facts
+  * Defers the issue without resolution
+- ESCALATE if the issue genuinely cannot be resolved automatically
+
+KEY INSIGHT: If the customer ticket has no actual problem (positive feedback, thanks, confirmation), the appropriate response is a polite acknowledgment - this should be APPROVED, not NEEDS_FIX.
+
+Reply with EXACTLY one of:
+- APPROVED: if the reply is appropriate (resolves issue OR acknowledges positive feedback)
+- NEEDS_FIX: if the reply is incomplete, asks for info, or does not resolve (explain what's wrong)
+- ESCALATE: if it cannot be resolved automatically"""),
+        HumanMessage(content=f"""Ticket: {state['ticket']}
+Category: {state['category']}
+Facts gathered: {state['facts']}
+Draft reply: {state['draft']}
+
+Does this reply appropriately handle the customer's message?"""),
+    ]
+
+    start = time.time()
+    response = llm.invoke(messages)
+    duration_ms = (time.time() - start) * 1000
+
+    _log_llm_call(ticket_id, "reviewer", messages, response, duration_ms)
+
+    usage = getattr(response, "usage_metadata", {}) or {}
+    input_details = usage.get("input_token_details", {}) or {}
+
+    verdict = response.content.strip().upper()
+    if "APPROVED" in verdict:
+        return {
+            "decision": "RESOLVED",
+            "iterations": iters,
+            "_input_tokens": usage.get("input_tokens", 0),
+            "_output_tokens": usage.get("output_tokens", 0),
+            "_cached_tokens": input_details.get("cache_read", 0),
+        }
+    elif "ESCALATE" in verdict:
+        return {
+            "decision": "ESCALATE",
+            "escalation_reason": response.content,
+            "iterations": iters,
+            "_input_tokens": usage.get("input_tokens", 0),
+            "_output_tokens": usage.get("output_tokens", 0),
+            "_cached_tokens": input_details.get("cache_read", 0),
+        }
+    else:
+        return {
+            "decision": "NEEDS_FIX",
+            "iterations": iters,
+            "_input_tokens": usage.get("input_tokens", 0),
+            "_output_tokens": usage.get("output_tokens", 0),
+            "_cached_tokens": input_details.get("cache_read", 0),
+        }
+
+
+def route_after_review(state: TicketState) -> str:
+    decision = state.get("decision", "")
+    iters = state.get("iterations", 0)
+
+    if decision == "RESOLVED":
+        return "end"
+    elif decision == "ESCALATE":
+        return "end"
+    elif iters >= MAX_ITERS:
+        # hit the loop cap, force escalate
+        return "end"
+    else:
+        return "responder"
+
+
 def build_graph():
     graph = StateGraph(TicketState)
 
     graph.add_node("classifier", classifier_node)
     graph.add_node("researcher", researcher_node)
-    
+    graph.add_node("responder", responder_node)
+    graph.add_node("reviewer", reviewer_node)
+
     graph.set_entry_point("classifier")
     graph.add_edge("classifier", "researcher")
+    graph.add_edge("researcher", "responder")
+    graph.add_edge("responder", "reviewer")
+
+    # reviewer can loop back to responder or exit
+    graph.add_conditional_edges(
+        "reviewer",
+        route_after_review,
+        {
+            "responder": "responder",
+            "end": END,
+        },
+    )
     
     return graph.compile()
 

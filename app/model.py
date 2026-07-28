@@ -9,3 +9,10 @@ class ResolveResponse(BaseModel) :
     decision: str
     reply: str
     category: str
+
+class SearchRequest(BaseModel):
+    query: str
+
+
+class ProductRequest(BaseModel):
+    product_id: int    

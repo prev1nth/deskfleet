@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeskFleet Admin Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: #1a1a2e; color: white; padding: 20px; margin-bottom: 20px; }
+        header h1 { font-size: 24px; }
+        header nav { margin-top: 10px; }
+        header nav a { color: #aaa; text-decoration: none; margin-right: 20px; }
+        header nav a:hover, header nav a.active { color: white; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-card h3 { font-size: 14px; color: #888; margin-bottom: 5px; }
+        .stat-card .value { font-size: 28px; font-weight: bold; color: #1a1a2e; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #1a1a2e; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .card p { word-wrap: break-word; overflow-wrap: break-word; }
+        .card pre { word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #555; }
+        tr:hover { background: #f5f5f5; cursor: pointer; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge-RESOLVED { background: #e8f5e9; color: #2e7d32; }
+        .badge-ESCALATE { background: #fff3e0; color: #e65100; }
+        .badge-REFUSE { background: #ffebee; color: #c62828; }
+        .badge-PENDING { background: #e3f2fd; color: #1565c0; }
+        .trace-timeline { position: relative; padding-left: 30px; }
+        .trace-item { position: relative; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 3px solid #4a90d9; }
+        .trace-item::before { content: ''; position: absolute; left: -38px; top: 18px; width: 12px; height: 12px; background: #4a90d9; border-radius: 50%; }
+        .trace-item.validation { border-left-color: #ff9800; }
+        .trace-item.validation::before { background: #ff9800; }
+        .trace-item.api_call { border-left-color: #4caf50; }
+        .trace-item.api_call::before { background: #4caf50; }
+        .trace-item.llm_call { border-left-color: #9c27b0; }
+        .trace-item.llm_call::before { background: #9c27b0; }
+        .trace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .trace-name { font-weight: 600; }
+        .trace-type { font-size: 12px; color: #888; padding: 2px 8px; border-radius: 4px; background: #e0e0e0; }
+        .trace-type.validation { background: #fff3e0; color: #e65100; }
+        .trace-type.api_call { background: #e8f5e9; color: #2e7d32; }
+        .trace-type.llm_call { background: #f3e5f5; color: #7b1fa2; }
+        .trace-meta { display: flex; gap: 15px; margin-bottom: 10px; font-size: 12px; color: #888; }
+        .trace-duration { color: #4a90d9; font-weight: 500; }
+        .trace-timestamp { color: #666; }
+        .trace-content { font-size: 13px; }
+        .trace-content pre { background: #fff; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; margin-top: 5px; border: 1px solid #eee; }
+        .trace-label { font-weight: 600; color: #555; margin-bottom: 3px; margin-top: 10px; }
+        .trace-section { margin-top: 15px; }
+        .trace-section-title { font-size: 12px; text-transform: uppercase; color: #888; margin-bottom: 5px; letter-spacing: 0.5px; }
+        .back-btn { display: inline-block; padding: 8px 16px; background: #4a90d9; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 15px; }
+        .back-btn:hover { background: #357abd; }
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .empty { text-align: center; padding: 40px; color: #888; }
+        .refresh-btn { padding: 8px 16px; background: #4a90d9; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 15px; }
+        .refresh-btn:hover { background: #357abd; }
+        .url-badge { font-family: monospace; font-size: 11px; background: #e8f5e9; padding: 2px 6px; border-radius: 3px; color: #2e7d32; }
+        .step-number { display: inline-block; width: 24px; height: 24px; background: #4a90d9; color: white; border-radius: 50%; text-align: center; line-height: 24px; font-size: 12px; font-weight: 600; margin-right: 8px; }
+        .step-number.validation { background: #ff9800; }
+        .step-number.api_call { background: #4caf50; }
+        .step-number.llm_call { background: #9c27b0; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>DeskFleet Admin Dashboard</h1>
+        <nav>
+            <a href="#" onclick="showView('list')" class="active" id="nav-list">Tickets</a>
+            <a href="/metrics" id="nav-metrics">Metrics</a>
+            <a href="/" id="nav-support">Support Portal</a>
+        </nav>
+    </header>
+    <div class="container">
+        <div id="listView">
+            <div class="stats" id="statsContainer"></div>
+            <div class="card">
+                <h2>Recent Tickets</h2>
+                <button class="refresh-btn" onclick="loadTickets()">Refresh</button>
+                <div id="ticketsContainer"><div class="loading">Loading...</div></div>
+            </div>
+        </div>
+        <div id="detailView" style="display:none">
+            <a href="#" class="back-btn" onclick="showView('list')">← Back to Tickets</a>
+            <div id="ticketDetail"><div class="loading">Loading...</div></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadTickets() {
+            try {
+                const res = await fetch('/api/tickets');
+                const data = await res.json();
+
+                const statsHtml = `
+                    <div class="stat-card">
+                        <h3>Total Tickets</h3>
+                        <div class="value">${data.stats.total_tickets}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Resolved</h3>
+                        <div class="value">${data.stats.by_decision.RESOLVED || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Escalated</h3>
+                        <div class="value">${data.stats.by_decision.ESCALATE || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Refused</h3>
+                        <div class="value">${data.stats.by_decision.REFUSE || 0}</div>
+                    </div>
+                `;
+                document.getElementById('statsContainer').innerHTML = statsHtml;
+
+                if (data.tickets.length === 0) {
+                    document.getElementById('ticketsContainer').innerHTML = '<div class="empty">No tickets yet</div>';
+                    return;
+                }
+
+                const rows = data.tickets.map(t => `
+                    <tr onclick="showTicket(${t.id})">
+                        <td>#${t.id}</td>
+                        <td>${t.body.substring(0, 50)}${t.body.length > 50 ? '...' : ''}</td>
+                        <td>${t.category || '-'}</td>
+                        <td><span class="badge badge-${t.decision}">${t.decision}</span></td>
+                        <td>${t.created_at}</td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('ticketsContainer').innerHTML = `
+                    <table>
+                        <thead><tr><th>ID</th><th>Ticket</th><th>Category</th><th>Decision</th><th>Created</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            } catch (err) {
+                document.getElementById('ticketsContainer').innerHTML = '<div class="empty">Failed to load tickets</div>';
+            }
+        }
+
+        async function showTicket(id) {
+            showView('detail');
+            document.getElementById('ticketDetail').innerHTML = '<div class="loading">Loading...</div>';
+
+            try {
+                const res = await fetch(`/api/tickets/${id}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    document.getElementById('ticketDetail').innerHTML = `<div class="empty">${data.error}</div>`;
+                    return;
+                }
+
+                const ticket = data.ticket;
+                const traces = (data.traces || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+                let tracesHtml = '';
+                if (traces.length > 0) {
+                    const traceItems = traces.map((t, idx) => {
+                        let requestHtml = '';
+                        let responseHtml = '';
+                        
+                        try {
+                            const req = JSON.parse(t.request);
+                            const res = JSON.parse(t.response);
+                            
+                            if (t.step_type === 'api_call') {
+                                const url = t.metadata?.url || 'unknown';
+                                requestHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">API Request</div>
+                                        <div class="url-badge">${url}</div>
+                                        <pre>${JSON.stringify(req, null, 2)}</pre>
+                                    </div>
+                                `;
+                                responseHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">API Response</div>
+                                        <pre>${JSON.stringify(res, null, 2)}</pre>
+                                    </div>
+                                `;
+                            } else if (t.step_type === 'llm_call') {
+                                const model = t.metadata?.model || 'unknown';
+                                const messages = req.messages || [];
+                                const toolCalls = res.tool_calls || [];
+                                
+                                requestHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">LLM Request (Model: ${model})</div>
+                                        ${messages.map((m, i) => `
+                                            <div style="margin-bottom:10px">
+                                                <strong>Message ${i + 1}:</strong>
+                                                <pre style="max-height:200px;overflow-y:auto">${typeof m === 'string' ? m : JSON.stringify(m, null, 2)}</pre>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `;
+                                responseHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">LLM Response</div>
+                                        <div style="margin-bottom:10px">
+                                            <strong>Content:</strong>
+                                            <pre style="max-height:200px;overflow-y:auto">${res.content || '(no content)'}</pre>
+                                        </div>
+                                        ${toolCalls.length > 0 ? `
+                                            <div>
+                                                <strong>Tool Calls:</strong>
+                                                <pre>${JSON.stringify(toolCalls, null, 2)}</pre>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            } else {
+                                requestHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">Request</div>
+                                        <pre>${JSON.stringify(req, null, 2)}</pre>
+                                    </div>
+                                `;
+                                responseHtml = `
+                                    <div class="trace-section">
+                                        <div class="trace-section-title">Response</div>
+                                        <pre>${JSON.stringify(res, null, 2)}</pre>
+                                    </div>
+                                `;
+                            }
+                        } catch {
+                            requestHtml = `<pre>${t.request}</pre>`;
+                            responseHtml = `<pre>${t.response}</pre>`;
+                        }
+
+                        const timestamp = new Date(t.created_at).toLocaleString();
+                        
+                        return `
+                            <div class="trace-item ${t.step_type}">
+                                <div class="trace-header">
+                                    <span class="trace-name">
+                                        <span class="step-number ${t.step_type}">${idx + 1}</span>
+                                        ${t.step_name}
+                                    </span>
+                                    <span class="trace-type ${t.step_type}">${t.step_type}</span>
+                                </div>
+                                <div class="trace-meta">
+                                    <span class="trace-timestamp">${timestamp}</span>
+                                    ${t.duration_ms ? `<span class="trace-duration">${Math.round(t.duration_ms)}ms</span>` : ''}
+                                </div>
+                                <div class="trace-content">
+                                    ${requestHtml}
+                                    ${responseHtml}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    tracesHtml = `<div class="trace-timeline">${traceItems}</div>`;
+                } else {
+                    tracesHtml = '<div class="empty">No traces recorded</div>';
+                }
+
+                document.getElementById('ticketDetail').innerHTML = `
+                    <div class="card">
+                        <h2>Ticket #${ticket.id}</h2>
+                        <p><strong>Body:</strong> ${ticket.body}</p>
+                        <p><strong>Category:</strong> ${ticket.category || '-'}</p>
+                        <p><strong>Decision:</strong> <span class="badge badge-${ticket.decision}">${ticket.decision}</span></p>
+                        <p><strong>Reply:</strong></p>
+                        <pre style="background:#f8f9fa;padding:10px;border-radius:4px;margin-top:5px">${ticket.reply || '-'}</pre>
+                        ${ticket.escalation_reason ? `<p><strong>Escalation Reason:</strong> ${ticket.escalation_reason}</p>` : ''}
+                        <p><strong>Created:</strong> ${ticket.created_at}</p>
+                    </div>
+                    <div class="card">
+                        <h2>Execution Traces (${traces.length} steps)</h2>
+                        ${tracesHtml}
+                    </div>
+                `;
+            } catch (err) {
+                document.getElementById('ticketDetail').innerHTML = '<div class="empty">Failed to load ticket</div>';
+            }
+        }
+
+        function showView(view) {
+            document.getElementById('listView').style.display = view === 'list' ? 'block' : 'none';
+            document.getElementById('detailView').style.display = view === 'detail' ? 'block' : 'none';
+            document.getElementById('nav-list').className = view === 'list' ? 'active' : '';
+        }
+
+        loadTickets();
+    </script>
+</body>
+</html>

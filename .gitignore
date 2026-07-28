@@ -1,3 +1,13 @@
-/.env
-/.venv
+.env
+.venv/
 app/__pycache__
+*.pyc
+*.db
+data/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.env.local
+.env.production
+.DS_Store

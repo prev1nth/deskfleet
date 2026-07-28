@@ -203,6 +203,7 @@ def is_tool_allowed(tool_name: str) -> bool:
 
 
 async def execute_tool(tool_name: str, ticket_id: int = None, **kwargs) -> dict :
+    from app.storage import save_trace
 
     if not is_tool_allowed(tool_name):
         return {"error": f"Tool '{tool_name}' not in allowlist", "allowed_tools": list(TOOL_REGISTRY.keys())}
@@ -214,5 +215,19 @@ async def execute_tool(tool_name: str, ticket_id: int = None, **kwargs) -> dict 
 
     if ticket_id:
         actual_url = result.get("_url", f"{FAKESTORE_BASE}/{tool_name.replace('_', '/')}")
+        save_trace(
+            ticket_id=ticket_id,
+            step_type="api_call",
+            step_name=tool_name,
+            request={"url": actual_url, "method": "GET", "params": kwargs},
+            response={k: v for k, v in result.items() if not k.startswith('_')},
+            metadata={
+                "url": actual_url,
+                "method": "GET",
+                "status_code": result.get("_status_code"),
+                "duration_ms": duration_ms,
+            },
+            duration_ms=duration_ms,
+        )
 
     return result

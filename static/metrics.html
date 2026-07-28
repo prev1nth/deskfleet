@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeskFleet Metrics</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: #1a1a2e; color: white; padding: 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 24px; }
+        header nav a { color: #aaa; text-decoration: none; margin-left: 20px; }
+        header nav a:hover { color: white; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-card h3 { font-size: 12px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 26px; font-weight: bold; }
+        .stat-card .sub { font-size: 11px; color: #999; margin-top: 2px; }
+        .green { color: #2e7d32; }
+        .orange { color: #e65100; }
+        .red { color: #c62828; }
+        .blue { color: #1565c0; }
+        .purple { color: #7b1fa2; }
+        .cyan { color: #00838f; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #1a1a2e; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .section-title { font-size: 14px; font-weight: 600; color: #555; margin: 15px 0 8px; }
+        .metric-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+        .metric-row:last-child { border-bottom: none; }
+        .metric-label { color: #666; }
+        .metric-value { font-weight: 600; }
+        .chart-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .chart { background: #f8f9fa; border-radius: 8px; padding: 15px; }
+        .chart h3 { font-size: 14px; color: #555; margin-bottom: 12px; }
+        .bar-chart { display: flex; flex-direction: column; gap: 8px; }
+        .bar-row { display: flex; align-items: center; gap: 10px; }
+        .bar-label { width: 100px; font-size: 12px; color: #666; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bar-container { flex: 1; background: #e8e8e8; border-radius: 4px; height: 22px; }
+        .bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; min-width: 2px; }
+        .bar.RESOLVED, .bar.resolved { background: #4caf50; }
+        .bar.ESCALATE, .bar.escalate { background: #ff9800; }
+        .bar.REFUSE, .bar.refuse { background: #f44336; }
+        .bar.NEEDS_FIX, .bar.needs_fix { background: #ff5722; }
+        .bar.PENDING, .bar.pending { background: #9e9e9e; }
+        .bar.default { background: #2196f3; }
+        .bar-value { width: 50px; font-size: 12px; color: #333; font-weight: 600; }
+        .prom-link { display: inline-block; margin-top: 10px; color: #1565c0; text-decoration: none; font-size: 13px; }
+        .prom-link:hover { text-decoration: underline; }
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .error { color: #f44336; padding: 10px; background: #ffebee; border-radius: 6px; }
+        .empty { text-align: center; padding: 15px; color: #aaa; font-size: 13px; }
+        .latency-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .latency-item { text-align: center; padding: 10px; background: #f8f9fa; border-radius: 6px; }
+        .latency-item .l-label { font-size: 11px; color: #888; text-transform: uppercase; }
+        .latency-item .l-value { font-size: 20px; font-weight: bold; color: #1a1a2e; margin-top: 2px; }
+        .latency-item .l-unit { font-size: 11px; color: #999; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>DeskFleet Metrics</h1>
+        <nav>
+            <a href="/admin">Admin Dashboard</a>
+            <a href="/">Support Portal</a>
+        </nav>
+    </header>
+    <div class="container">
+        <div class="stats" id="statsContainer"><div class="loading">Loading...</div></div>
+
+        <div class="card">
+            <h2>LLM Latency</h2>
+            <div id="latencyContainer"><div class="loading">Loading...</div></div>
+        </div>
+
+        <div class="card">
+            <h2>Prometheus Metrics</h2>
+            <a class="prom-link" href="/metrics/prometheus" target="_blank">View raw Prometheus format</a>
+            <div id="prometheusContainer" style="margin-top: 10px;"><div class="loading">Loading...</div></div>
+        </div>
+
+        <div class="card">
+            <h2>Breakdown</h2>
+            <div class="chart-container" id="chartsContainer"><div class="loading">Loading...</div></div>
+        </div>
+    </div>
+
+    <script>
+        let metricsData = {};
+
+        async function loadMetrics() {
+            try {
+                const res = await fetch('/metrics/raw');
+                if (!res.ok) throw new Error('Failed to fetch');
+                metricsData = await res.json();
+                renderStats();
+                renderLatency();
+                renderPrometheus();
+                renderCharts();
+            } catch (err) {
+                document.getElementById('statsContainer').innerHTML = '<div class="error">Failed to load metrics: ' + err.message + '</div>';
+            }
+        }
+
+        function renderStats() {
+            const db = metricsData.database || {};
+            const prom = metricsData.prometheus || {};
+
+            const tickets = db.total_tickets || 0;
+            const byDecision = db.by_decision || {};
+            const resolved = byDecision.RESOLVED || 0;
+            const escalated = byDecision.ESCALATE || 0;
+            const refused = byDecision.REFUSE || 0;
+            const needsFix = byDecision.NEEDS_FIX || 0;
+
+            const inputTokens = prom.deskfleet_input_tokens_total || 0;
+            const outputTokens = prom.deskfleet_output_tokens_total || 0;
+            const cachedTokens = prom.deskfleet_cached_tokens_total || 0;
+            const totalTokens = inputTokens + outputTokens;
+
+            const inputCost = prom.deskfleet_input_cost_usd_total || 0;
+            const outputCost = prom.deskfleet_output_cost_usd_total || 0;
+            const cachedCost = prom.deskfleet_cached_cost_usd_total || 0;
+            const totalCost = inputCost + outputCost + cachedCost;
+
+            const totalToolCalls = prom.deskfleet_tool_calls_total || 0;
+
+            document.getElementById('statsContainer').innerHTML = `
+                <div class="stat-card">
+                    <h3>Total Tickets</h3>
+                    <div class="value blue">${tickets}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Resolved</h3>
+                    <div class="value green">${resolved}</div>
+                    <div class="sub">${tickets > 0 ? Math.round((resolved / tickets) * 100) : 0}% of total</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Escalated</h3>
+                    <div class="value orange">${escalated}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Needs Fix</h3>
+                    <div class="value orange">${needsFix}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Refused</h3>
+                    <div class="value red">${refused}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Tokens</h3>
+                    <div class="value purple">${totalTokens > 0 ? totalTokens.toLocaleString() : '-'}</div>
+                    <div class="sub">In: ${inputTokens.toLocaleString()} | Out: ${outputTokens.toLocaleString()} | Cached: ${cachedTokens.toLocaleString()}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Cost</h3>
+                    <div class="value">${totalCost > 0 ? '$' + totalCost.toFixed(6) : '-'}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Tool Calls</h3>
+                    <div class="value cyan">${totalToolCalls > 0 ? totalToolCalls : '-'}</div>
+                </div>
+            `;
+        }
+
+        function renderLatency() {
+            const ls = metricsData.latency_stats || {};
+            const prom = metricsData.prometheus || {};
+            const lat = prom.deskfleet_ticket_latency || {};
+
+            const totalLLMs = ls.total_llm_calls || 0;
+            const avg = ls.avg_ms || 0;
+            const p50 = ls.p50_ms || 0;
+            const p95 = ls.p95_ms || 0;
+            const max = ls.max_ms || 0;
+
+            document.getElementById('latencyContainer').innerHTML = `
+                <div class="section-title">LLM Call Latency (from traces)</div>
+                <div class="latency-grid">
+                    <div class="latency-item">
+                        <div class="l-label">Total LLM Calls</div>
+                        <div class="l-value">${totalLLMs}</div>
+                    </div>
+                    <div class="latency-item">
+                        <div class="l-label">Average</div>
+                        <div class="l-value">${avg}<span class="l-unit">ms</span></div>
+                    </div>
+                    <div class="latency-item">
+                        <div class="l-label">P50</div>
+                        <div class="l-value">${p50}<span class="l-unit">ms</span></div>
+                    </div>
+                    <div class="latency-item">
+                        <div class="l-label">P95</div>
+                        <div class="l-value">${p95}<span class="l-unit">ms</span></div>
+                    </div>
+                </div>
+                ${lat.count > 0 ? `
+                <div class="section-title" style="margin-top: 15px;">Prometheus Histogram (per-ticket)</div>
+                <div class="metric-row">
+                    <span class="metric-label">Total observations</span>
+                    <span class="metric-value">${lat.count}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Avg latency</span>
+                    <span class="metric-value">${lat.avg ? lat.avg.toFixed(2) + 's' : '-'}</span>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        function renderPrometheus() {
+            const prom = metricsData.prometheus || {};
+            const container = document.getElementById('prometheusContainer');
+
+            function formatCost(val) {
+                return val > 0 ? '$' + val.toFixed(6) : '-';
+            }
+            function formatNum(val) {
+                return val > 0 ? Math.round(val).toLocaleString() : '-';
+            }
+
+            let html = '';
+
+            // Tickets
+            html += `<div class="metric-row"><span class="metric-label"><strong>Tickets Processed</strong></span><span class="metric-value">${formatNum(prom.deskfleet_tickets_total)}</span></div>`;
+
+            // Input Tokens
+            html += `<div class="metric-row"><span class="metric-label"><strong>Input Tokens</strong></span><span class="metric-value">${formatNum(prom.deskfleet_input_tokens_total)}</span></div>`;
+
+            // Output Tokens
+            html += `<div class="metric-row"><span class="metric-label"><strong>Output Tokens</strong></span><span class="metric-value">${formatNum(prom.deskfleet_output_tokens_total)}</span></div>`;
+
+            // Cached Tokens
+            html += `<div class="metric-row"><span class="metric-label"><strong>Cached Input Tokens</strong></span><span class="metric-value">${formatNum(prom.deskfleet_cached_tokens_total)}</span></div>`;
+
+            // Input Cost
+            html += `<div class="metric-row"><span class="metric-label"><strong>Input Cost ($0.15/1M)</strong></span><span class="metric-value">${formatCost(prom.deskfleet_input_cost_usd_total)}</span></div>`;
+
+            // Output Cost
+            html += `<div class="metric-row"><span class="metric-label"><strong>Output Cost ($0.60/1M)</strong></span><span class="metric-value">${formatCost(prom.deskfleet_output_cost_usd_total)}</span></div>`;
+
+            // Cached Cost
+            html += `<div class="metric-row"><span class="metric-label"><strong>Cached Cost ($0.075/1M)</strong></span><span class="metric-value">${formatCost(prom.deskfleet_cached_cost_usd_total)}</span></div>`;
+
+            // Total Cost
+            const totalCost = (prom.deskfleet_input_cost_usd_total || 0) + (prom.deskfleet_output_cost_usd_total || 0) + (prom.deskfleet_cached_cost_usd_total || 0);
+            html += `<div class="metric-row" style="border-top:2px solid #eee;padding-top:8px;margin-top:8px"><span class="metric-label"><strong>Total Cost</strong></span><span class="metric-value"><strong>${formatCost(totalCost)}</strong></span></div>`;
+
+            // Tool Calls
+            html += `<div class="metric-row"><span class="metric-label"><strong>Tool Calls</strong></span><span class="metric-value">${formatNum(prom.deskfleet_tool_calls_total)}</span></div>`;
+
+            container.innerHTML = html || '<div class="empty">No Prometheus data yet</div>';
+        }
+
+        function renderCharts() {
+            const db = metricsData.database || {};
+            const byDecision = db.by_decision || {};
+            const byCategory = db.by_category || {};
+
+            const maxDecision = Math.max(...Object.values(byDecision), 1);
+            const maxCategory = Math.max(...Object.values(byCategory), 1);
+
+            const decisionBars = Object.entries(byDecision).map(([key, val]) => `
+                <div class="bar-row">
+                    <span class="bar-label">${key}</span>
+                    <div class="bar-container">
+                        <div class="bar ${key.toLowerCase()}" style="width: ${(val / maxDecision) * 100}%"></div>
+                    </div>
+                    <span class="bar-value">${val}</span>
+                </div>
+            `).join('');
+
+            const categoryBars = Object.entries(byCategory).filter(([k]) => k).map(([key, val]) => `
+                <div class="bar-row">
+                    <span class="bar-label">${key}</span>
+                    <div class="bar-container">
+                        <div class="bar default" style="width: ${(val / maxCategory) * 100}%"></div>
+                    </div>
+                    <span class="bar-value">${val}</span>
+                </div>
+            `).join('');
+
+            document.getElementById('chartsContainer').innerHTML = `
+                <div class="chart">
+                    <h3>By Decision</h3>
+                    <div class="bar-chart">${decisionBars || '<div class="empty">No data</div>'}</div>
+                </div>
+                <div class="chart">
+                    <h3>By Category</h3>
+                    <div class="bar-chart">${categoryBars || '<div class="empty">No data</div>'}</div>
+                </div>
+            `;
+        }
+
+        loadMetrics();
+        setInterval(loadMetrics, 30000);
+    </script>
+</body>
+</html>
