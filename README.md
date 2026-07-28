@@ -69,6 +69,14 @@ uvicorn app.main:app --reload --port 8000
 | `GET`  | `/metrics/prometheus` | Prometheus metrics             |
 | `GET`  | `/admin`              | Admin dashboard                |
 
+## UI pages
+
+| Page                | Path       | What it shows                                                                   |
+| ------------------- | ---------- | ------------------------------------------------------------------------------- |
+| **Support Portal**  | `/`        | Search products/orders, submit tickets for resolution, see AI response          |
+| **Admin Dashboard** | `/admin`   | List of processed tickets with decisions, click for full trace + tool calls     |
+| **Metrics**         | `/metrics` | Token usage, cost breakdown (input/output/cached), latency stats, ticket counts |
+
 ## Tests
 
 ```bash
